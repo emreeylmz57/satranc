@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Türkçe Satranç - Stockfish İpuçlu</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+  <style>
+    :root {
+      --bg-color: #e1e1e1;
+      --panel-bg: #23272f;
+      --light-sq: #eed8b5;
+      --dark-sq: #b58863;
+      --selected-sq: #f6f669;
+      --last-move-sq: #cdd26a;
+      --check-sq: #eb2d2d;
+      --btn-bg: #416996;
+      --btn-hover: #5582b4;
+      --btn-disabled: #5a5a5a;
+      --text-main: #f0f0f0;
+      --accent-green: #50b46e;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .app-container {
+      display: flex;
+      gap: 28px;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    /* TAHTA ALANI */
+    .board-wrapper {
+      position: relative;
+      padding: 18px 18px 26px 26px;
+      background: #d5d5d5;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(8, 76px);
+      grid-template-rows: repeat(8, 76px);
+      border: 2px solid #333;
+      position: relative;
+      user-select: none;
+    }
+
+    .square {
+      width: 76px;
+      height: 76px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+      cursor: pointer;
+    }
+
+    .square.light { background-color: var(--light-sq); }
+    .square.dark { background-color: var(--dark-sq); }
+    .square.last-move { background-color: var(--last-move-sq) !important; }
+    .square.selected { background-color: var(--selected-sq) !important; }
+
+    @keyframes checkFlash {
+      0%, 100% { background-color: var(--check-sq); }
+      50% { background-color: #ff8080; }
+    }
+
+    .square.check-flash {
+      animation: checkFlash 0.25s linear 6;
+    }
+
+    .piece {
+      font-size: 54px;
+      line-height: 1;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .piece.white {
+      color: #fafafa;
+      text-shadow: 0 1px 2px #222, 0 0 2px #000;
+    }
+
+    .piece.black {
+      color: #191919;
+    }
+
+    /* Yasal hamle göstergeleri */
+    .legal-dot {
+      width: 16px;
+      height: 16px;
+      background-color: rgba(45, 45, 45, 0.75);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .legal-capture {
+      width: 62px;
+      height: 62px;
+      border: 4px solid rgba(45, 45, 45, 0.75);
+      border-radius: 50%;
+      position: absolute;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    /* İpucu oku için SVG katmanı */
+    #hint-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 4;
+    }
+
+    /* Koordinatlar */
+    .coord-rank {
+      position: absolute;
+      left: 7px;
+      font-size: 13px;
+      font-weight: bold;
+      color: #232323;
+    }
+
+    .coord-file {
+      position: absolute;
+      bottom: 5px;
+      font-size: 13px;
+      font-weight: bold;
+      color: #232323;
+    }
+
+    /* SAĞ PANEL */
+    .side-panel {
+      width: 300px;
+      background-color: var(--panel-bg);
+      color: var(--text-main);
+      border-radius: 12px;
+      padding: 26px 22px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .panel-title {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      border-bottom: 1px solid #3a404d;
+      padding-bottom: 12px;
+    }
+
+    .info-row {
+      font-size: 18px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .turn-badge {
+      color: var(--accent-green);
+      font-weight: bold;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 13px;
+      border: 1px solid #d2d2d2;
+      border-radius: 8px;
+      background-color: var(--btn-bg);
+      color: var(--text-main);
+      font-size: 17px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn:hover:not(:disabled) {
+      background-color: var(--btn-hover);
+    }
+
+    .btn:disabled {
+      background-color: var(--btn-disabled);
+      border-color: #777;
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+
+    .btn-danger {
+      background-color: #a83838;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background-color: #c44545;
+    }
+
+    .status-box {
+      background: #1b1e24;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 75px;
+      color: #aae1b4;
+    }
+
+    .engine-status {
+      font-size: 13px;
+      color: var(--accent-green);
+    }
+
+    .move-counter {
+      font-size: 14px;
+      color: #bbb;
+    }
+
+    /* OYUN SONU VE TERFİ MODALLARI */
+    .modal-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 18, 24, 0.85);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 10;
+      border-radius: 8px;
+    }
+
+    .modal-box {
+      background: #1e222a;
+      border: 2px solid #f5dc78;
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+      color: #fff0b4;
+      max-width: 90%;
+    }
+
+    .modal-box h2 {
+      margin-bottom: 16px;
+      font-size: 22px;
+    }
+
+    .promo-options {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .promo-btn {
+      padding: 10px 16px;
+      background: var(--btn-bg);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .promo-btn:hover {
+      background: var(--btn-hover);
+    }
+
+    @media (max-width: 680px) {
+      .board {
+        grid-template-columns: repeat(8, 42px);
+        grid-template-rows: repeat(8, 42px);
+      }
+      .square { width: 42px; height: 42px; }
+      .piece { font-size: 32px; }
+      .legal-capture { width: 34px; height: 34px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-container">
+  <!-- SATRANÇ TAHTASI -->
+  <div class="board-wrapper" id="board-wrapper">
+    <div class="board" id="board"></div>
+    <svg id="hint-overlay"></svg>
+
+    <!-- Oyun Sonu Bildirimi -->
+    <div class="modal-overlay" id="gameover-modal">
+      <div class="modal-box">
+        <h2 id="gameover-text">Oyun Bitti!</h2>
+        <button class="btn" onclick="resetGame()">Yeniden Başlat</button>
+      </div>
+    </div>
+
+    <!-- Piyon Terfisi Seçimi -->
+    <div class="modal-overlay" id="promo-modal">
+      <div class="modal-box">
+        <h2>Piyon terfisi: Taş seçin</h2>
+        <div class="promo-options">
+          <button class="promo-btn" onclick="selectPromotion('q')">Vezir</button>
+          <button class="promo-btn" onclick="selectPromotion('r')">Kale</button>
+          <button class="promo-btn" onclick="selectPromotion('b')">Fil</button>
+          <button class="promo-btn" onclick="selectPromotion('n')">At</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SAĞ BİLGİ PANELİ -->
+  <div class="side-panel">
+    <div class="panel-title">SATRANÇ</div>
+
+    <div class="info-row">
+      <span>Sıra:</span>
+      <span class="turn-badge" id="turn-text">Beyaz</span>
+    </div>
+
+    <div class="info-row">
+      <span>Beyaz İpucu Hakkı:</span>
+      <strong id="white-hints">150 / 150</strong>
+    </div>
+
+    <div class="info-row">
+      <span>Siyah İpucu Hakkı:</span>
+      <strong id="black-hints">150 / 150</strong>
+    </div>
+
+    <button class="btn" id="hint-btn" onclick="requestHint()">İpucu Al (Stockfish)</button>
+
+    <div class="status-box" id="status-msg">İpucu almak için butona basın.</div>
+
+    <div class="engine-status" id="engine-status">Stockfish motoru yükleniyor...</div>
+    <div class="move-counter" id="move-counter">Hamle sayısı: 1</div>
+
+    <button class="btn" onclick="flipBoard()">Tahtayı Döndür</button>
+    <button class="btn" id="undo-btn" onclick="undoMove()" disabled>Hamleyi Geri Al</button>
+    <button class="btn btn-danger" onclick="resetGame()">Yeniden Başlat</button>
+  </div>
+</div>
+
+<script>
+  const game = new Chess();
+  const MAX_HINTS = 150;
+  let selectedSquare = null;
+  let isFlipped = false;
+  let hintRights = { w: MAX_HINTS, b: MAX_HINTS };
+  let activeHint = null;
+  let pendingPromo = null;
+  let flashCheckSquare = null;
+  let stockfish = null;
+  let engineReady = false;
+
+  const PIECE_GLYPHS = {
+    p: '♟', r: '♜', n: '♞', b: '♝', q: '♛', k: '♚'
+  };
+
+  // Stockfish Web Worker Başlatma (CORS uyumlu Blob yöntemi)
+  async function initStockfish() {
+    const statusEl = document.getElementById('engine-status');
+    try {
+      const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');
+      const scriptText = await response.text();
+      const blob = new Blob([scriptText], { type: 'application/javascript' });
+      stockfish = new Worker(URL.createObjectURL(blob));
+
+      stockfish.onmessage = function(event) {
+        const line = event.data;
+        if (line === 'uciok') {
+          engineReady = true;
+          stockfish.postMessage('setoption name Hash value 32');
+          statusEl.textContent = 'Stockfish hazır';
+          updatePanel();
+        } else if (line.startsWith('bestmove')) {
+          const bestMoveUci = line.split(' ')[1];
+          handleBestMove(bestMoveUci);
+        }
+      };
+      stockfish.postMessage('uci');
+    } catch (err) {
+      statusEl.style.color = '#ffaa96';
+      statusEl.textContent = 'Stockfish yüklenemedi (İnternet bağlantısını kontrol edin).';
+    }
+  }
+
+  function renderBoard() {
+    const boardEl = document.getElementById('board');
+    const wrapperEl = document.getElementById('board-wrapper');
+    boardEl.innerHTML = '';
+
+    // Eski koordinat etiketlerini temizle
+    wrapperEl.querySelectorAll('.coord-rank, .coord-file').forEach(el => el.remove());
+
+    const history = game.history({ verbose: true });
+    const lastMove = history.length > 0 ? history[history.length - 1] : null;
+    const legalMoves = selectedSquare ? game.moves({ square: selectedSquare, verbose: true }) : [];
+
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const rankIdx = isFlipped ? r : 7 - r;
+        const fileIdx = isFlipped ? 7 - c : c;
+        const fileChar = String.fromCharCode(97 + fileIdx);
+        const rankChar = (rankIdx + 1).toString();
+        const sqName = fileChar + rankChar;
+
+        const sqDiv = document.createElement('div');
+        sqDiv.className = 'square ' + ((r + c) % 2 === 0 ? 'light' : 'dark');
+        sqDiv.dataset.square = sqName;
+
+        // Son hamle vurgusu
+        if (lastMove && (lastMove.from === sqName || lastMove.to === sqName)) {
+          sqDiv.classList.add('last-move');
+        }
+
+        // Seçili kare vurgusu
+        if (selectedSquare === sqName) {
+          sqDiv.classList.add('selected');
+        }
+
+        // Geçici şah kızartması
+        if (flashCheckSquare === sqName) {
+          sqDiv.classList.add('check-flash');
+        }
+
+        // Taş çizimi
+        const piece = game.get(sqName);
+        if (piece) {
+          const pSpan = document.createElement('span');
+          pSpan.className = 'piece ' + (piece.color === 'w' ? 'white' : 'black');
+          pSpan.textContent = PIECE_GLYPHS[piece.type];
+          sqDiv.appendChild(pSpan);
+        }
+
+        // Yasal hamle noktaları
+        const targetMove = legalMoves.find(m => m.to === sqName);
+        if (targetMove) {
+          const indicator = document.createElement('div');
+          indicator.className = piece ? 'legal-capture' : 'legal-dot';
+          sqDiv.appendChild(indicator);
+        }
+
+        sqDiv.onclick = () => onSquareClick(sqName);
+        boardEl.appendChild(sqDiv);
+      }
+    }
+
+    // Kenar koordinatları
+    const sqSize = boardEl.offsetWidth / 8;
+    for (let i = 0; i < 8; i++) {
+      const rankLabel = document.createElement('div');
+      rankLabel.className = 'coord-rank';
+      rankLabel.textContent = isFlipped ? (i + 1) : (8 - i);
+      rankLabel.style.top = (18 + i * sqSize + sqSize / 2 - 8) + 'px';
+      wrapperEl.appendChild(rankLabel);
+
+      const fileLabel = document.createElement('div');
+      fileLabel.className = 'coord-file';
+      const fIdx = isFlipped ? 7 - i : i;
+      fileLabel.textContent = String.fromCharCode(97 + fIdx);
+      fileLabel.style.left = (26 + i * sqSize + sqSize / 2 - 4) + 'px';
+      wrapperEl.appendChild(fileLabel);
+    }
+
+    drawHintArrow();
+    updatePanel();
+  }
+
+  function getSquareCenter(sqName) {
+    const boardEl = document.getElementById('board');
+    const sqSize = boardEl.offsetWidth / 8;
+    const fileIdx = sqName.charCodeAt(0) - 97;
+    const rankIdx = parseInt(sqName[1], 10) - 1;
+
+    const col = isFlipped ? 7 - fileIdx : fileIdx;
+    const row = isFlipped ? rankIdx : 7 - rankIdx;
+
+    return {
+      x: 26 + col * sqSize + sqSize / 2,
+      y: 18 + row * sqSize + sqSize / 2
+    };
+  }
+
+  function drawHintArrow() {
+    const svg = document.getElementById('hint-overlay');
+    svg.innerHTML = '';
+    if (!activeHint) return;
+
+    const start = getSquareCenter(activeHint.from);
+    const end = getSquareCenter(activeHint.to);
+
+    svg.innerHTML = `
+      <circle cx="${start.x}" cy="${start.y}" r="24" fill="none" stroke="#1ebe5a" stroke-width="4" />
+      <circle cx="${end.x}" cy="${end.y}" r="24" fill="none" stroke="#1ebe5a" stroke-width="5" />
+      <line x1="${start.x}" y1="${start.y}" x2="${end.x}" y2="${end.y}" stroke="#1ebe5a" stroke-width="5" stroke-linecap="round" />
+    `;
+  }
+
+  function onSquareClick(sqName) {
+    if (game.game_over() || pendingPromo) return;
+
+    const clickedPiece = game.get(sqName);
+
+    if (!selectedSquare) {
+      if (clickedPiece && clickedPiece.color === game.turn()) {
+        selectedSquare = sqName;
+        activeHint = null;
+        renderBoard();
+      }
+      return;
+    }
+
+    // Kendi başka taşına tıklarsa seçimi değiştir
+    if (clickedPiece && clickedPiece.color === game.turn()) {
+      selectedSquare = sqName;
+      renderBoard();
+      return;
+    }
+
+    // Yasal hamle mi kontrol et
+    const legalMoves = game.moves({ square: selectedSquare, verbose: true });
+    const moveMatch = legalMoves.find(m => m.to === sqName);
+
+    if (moveMatch) {
+      // Piyon terfisi kontrolü
+      if (moveMatch.flags.includes('p')) {
+        pendingPromo = { from: selectedSquare, to: sqName };
+        document.getElementById('promo-modal').style.display = 'flex';
+        return;
+      }
+      executeMove(selectedSquare, sqName, 'q');
+    } else {
+      selectedSquare = null;
+      renderBoard();
+    }
+  }
+
+  function selectPromotion(pieceType) {
+    document.getElementById('promo-modal').style.display = 'none';
+    if (pendingPromo) {
+      const { from, to } = pendingPromo;
+      pendingPromo = null;
+      executeMove(from, to, pieceType);
+    }
+  }
+
+  function executeMove(from, to, promotion) {
+    const move = game.move({ from, to, promotion });
+    selectedSquare = null;
+    activeHint = null;
+
+    if (move) {
+      // Şah çekildi mi? Geçici kızartma tetikle
+      if (game.in_check()) {
+        flashCheckSquare = findKingSquare(game.turn());
+        setTimeout(() => {
+          flashCheckSquare = null;
+          renderBoard();
+        }, 1500);
+      } else {
+        flashCheckSquare = null;
+      }
+      checkGameOver();
+    }
+    renderBoard();
+  }
+
+  function findKingSquare(color) {
+    const board = game.board();
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const p = board[r][c];
+        if (p && p.type === 'k' && p.color === color) {
+          return String.fromCharCode(97 + c) + (8 - r);
+        }
+      }
+    }
+    return null;
+  }
+
+  function requestHint() {
+    const turn = game.turn();
+    if (game.game_over() || hintRights[turn] <= 0 || !engineReady) return;
+
+    document.getElementById('status-msg').textContent = 'Stockfish hesaplıyor...';
+    document.getElementById('hint-btn').disabled = true;
+
+    stockfish.postMessage('position fen ' + game.fen());
+    stockfish.postMessage('go movetime 350');
+  }
+
+  function handleBestMove(uci) {
+    if (!uci || uci === '(none)') return;
+    const from = uci.slice(0, 2);
+    const to = uci.slice(2, 4);
+    const promo = uci.length > 4 ? uci[4] : 'q';
+
+    // Hamleyi SAN formatında göstermek için geçici kontrol
+    const tempGame = new Chess(game.fen());
+    const moveObj = tempGame.move({ from, to, promotion: promo });
+
+    if (moveObj) {
+      const turn = game.turn();
+      hintRights[turn] -= 1;
+      activeHint = { from, to };
+      document.getElementById('status-msg').textContent = `Öneri: ${moveObj.san} (${from} → ${to})`;
+      renderBoard();
+    }
+  }
+
+  function flipBoard() {
+    isFlipped = !isFlipped;
+    renderBoard();
+  }
+
+  function undoMove() {
+    if (game.history().length === 0) return;
+    game.undo();
+    selectedSquare = null;
+    activeHint = null;
+    flashCheckSquare = game.in_check() ? findKingSquare(game.turn()) : null;
+    document.getElementById('gameover-modal').style.display = 'none';
+    document.getElementById('status-msg').textContent = 'Son hamle geri alındı.';
+    renderBoard();
+  }
+
+  function resetGame() {
+    game.reset();
+    selectedSquare = null;
+    activeHint = null;
+    pendingPromo = null;
+    flashCheckSquare = null;
+    hintRights = { w: MAX_HINTS, b: MAX_HINTS };
+    document.getElementById('gameover-modal').style.display = 'none';
+    document.getElementById('promo-modal').style.display = 'none';
+    document.getElementById('status-msg').textContent = 'İpucu almak için butona basın.';
+    renderBoard();
+  }
+
+  function checkGameOver() {
+    if (!game.game_over()) return;
+    let msg = 'Oyun Bitti! ';
+    if (game.in_checkmate()) {
+      const winner = game.turn() === 'b' ? 'Beyaz' : 'Siyah';
+      msg += `Kazanan: ${winner}`;
+    } else if (game.in_stalemate()) {
+      msg += 'Beraberlik: Pat';
+    } else if (game.insufficient_material()) {
+      msg += 'Beraberlik: Yetersiz materyal';
+    } else if (game.in_threefold_repetition()) {
+      msg += 'Beraberlik: Üç kez tekrar';
+    } else {
+      msg += 'Beraberlik';
+    }
+    document.getElementById('gameover-text').textContent = msg;
+    document.getElementById('gameover-modal').style.display = 'flex';
+  }
+
+  function updatePanel() {
+    const turn = game.turn();
+    document.getElementById('turn-text').textContent = turn === 'w' ? 'Beyaz' : 'Siyah';
+    document.getElementById('white-hints').textContent = `${hintRights.w} / ${MAX_HINTS}`;
+    document.getElementById('black-hints').textContent = `${hintRights.b} / ${MAX_HINTS}`;
+
+    const fullMove = Math.floor(game.history().length / 2) + 1;
+    document.getElementById('move-counter').textContent = `Hamle sayısı: ${fullMove}`;
+
+    document.getElementById('hint-btn').disabled =
+      game.game_over() || hintRights[turn] <= 0 || !engineReady;
+
+    document.getElementById('undo-btn').disabled = game.history().length === 0;
+  }
+
+  window.addEventListener('resize', renderBoard);
+  initStockfish();
+  renderBoard();
+</script>
+</body>
+</html>
